@@ -20,12 +20,51 @@ from src.calendar_client import create_event
 def _extract_json(text: str) -> str:
     """Try to extract a JSON substring from model output."""
     text = text.strip()
-    # Find first '{' and last '}'
+
+    # Strip code fences if the model wraps JSON in markdown.
+    text = re.sub(r"^```(?:json)?\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*```$", "", text, flags=re.IGNORECASE)
+
     start = text.find('{')
     end = text.rfind('}')
     if start != -1 and end != -1 and end > start:
         return text[start:end+1]
     return text
+
+
+def _normalize_relative_date(date_value: Optional[str], timezone_name: Optional[str] = None) -> Optional[str]:
+    """Resolve relative dates using Gemini's natural-language interpretation."""
+    if date_value is None:
+        return None
+
+    value = str(date_value).strip()
+    if not value:
+        return None
+
+    # Already concrete ISO dates should be kept as-is.
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        return value
+
+    tz = ZoneInfo(timezone_name) if timezone_name else None
+    today = datetime.now(tz) if tz else datetime.now()
+
+    prompt = (
+        "Convert the following date expression into a single ISO date in YYYY-MM-DD format. "
+        "Use today's date as the reference point. Return only the date and nothing else.\n"
+        f"Today: {today.date().isoformat()}\n"
+        f"Timezone: {timezone_name or 'UTC'}\n"
+        f"Input: {value}"
+    )
+
+    try:
+        response = generate_text(prompt)
+        match = re.search(r"\d{4}-\d{2}-\d{2}", response)
+        if match:
+            return match.group(0)
+    except Exception:
+        pass
+
+    return value
 
 
 def parse_event_request(nl: str) -> Dict[str, Any]:
@@ -58,9 +97,9 @@ def parse_event_request(nl: str) -> Dict[str, Any]:
     json_text = _extract_json(resp)
     try:
         parsed = json.loads(json_text)
-        # Ensure timezone is set to default Sao Paulo when model returns null/empty
-        if not parsed.get('timezone'):
-            parsed['timezone'] = 'America/Sao_Paulo'
+        timezone_name = parsed.get('timezone') or 'America/Sao_Paulo'
+        parsed['timezone'] = timezone_name
+        parsed['date'] = _normalize_relative_date(parsed.get('date'), timezone_name)
         return parsed
     except Exception as e:
         raise RuntimeError(f'Failed to parse model JSON output: {e}\nModel output:\n{resp}')
@@ -69,10 +108,10 @@ def parse_event_request(nl: str) -> Dict[str, Any]:
 def build_event_body(parsed: Dict[str, Any]) -> Dict[str, Any]:
     """Build a Google Calendar event body from parsed fields."""
     summary = parsed.get('summary') or 'Untitled Event'
-    date = parsed.get('date')
+    timezone = parsed.get('timezone') or 'America/Sao_Paulo'
+    date = _normalize_relative_date(parsed.get('date'), timezone)
     start_time = parsed.get('start_time')
     duration = parsed.get('duration_minutes') or 60
-    timezone = parsed.get('timezone') or 'America/Sao_Paulo'
     try:
         tz = ZoneInfo(timezone)
     except ZoneInfoNotFoundError:
@@ -155,7 +194,12 @@ def build_event_body(parsed: Dict[str, Any]) -> Dict[str, Any]:
     elif date:
         # all-day event
         start = {"date": date}
-        end = {"date": date}
+        try:
+            start_date = datetime.strptime(date, "%Y-%m-%d").date()
+            end_date = start_date + timedelta(days=1)
+            end = {"date": end_date.isoformat()}
+        except ValueError:
+            end = {"date": date}
     else:
         # no date — create a tentative event with no time (user should confirm)
         start = {"date": datetime.utcnow().date().isoformat()}

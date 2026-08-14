@@ -4,33 +4,87 @@ Small robustness improvements: safer model listing, clearer REST fallback helper
 and improved error messages to aid unit testing and failure diagnosis.
 """
 import os
-import dotenv
 import time
-from typing import List
+from typing import Any, List
+
+import dotenv
+import requests
 
 try:
     from google import genai
 except Exception:  # pragma: no cover - environment-specific
     genai = None
 
-import requests
+
+def _extract_text(payload: Any) -> str:
+    """Normalize Gemini response payloads to plain text."""
+    if payload is None:
+        return ""
+
+    if isinstance(payload, str):
+        return payload
+
+    if isinstance(payload, dict):
+        if "text" in payload and isinstance(payload["text"], str):
+            return payload["text"]
+        if "output" in payload and isinstance(payload["output"], str):
+            return payload["output"]
+
+        parts = payload.get("parts")
+        if parts:
+            texts = []
+            for part in parts:
+                if isinstance(part, dict):
+                    text = part.get("text")
+                    if text:
+                        texts.append(str(text))
+                elif hasattr(part, "text") and part.text:
+                    texts.append(str(part.text))
+            if texts:
+                return "".join(texts)
+
+        content = payload.get("content")
+        if content:
+            extracted = _extract_text(content)
+            if extracted:
+                return extracted
+
+        candidates = payload.get("candidates")
+        if candidates:
+            return _extract_text(candidates[0])
+
+    if hasattr(payload, "text") and payload.text:
+        return str(payload.text)
+
+    if hasattr(payload, "candidates") and payload.candidates:
+        return _extract_text(payload.candidates[0])
+
+    if hasattr(payload, "content"):
+        return _extract_text(payload.content)
+
+    return str(payload)
 
 
 def _rest_fallback(api_key: str, model: str, prompt: str) -> str:
     """Call the Generative Language REST endpoint as a final fallback."""
-    endpoint = f"https://generativelanguage.googleapis.com/v1beta2/models/{model}:generateText"
+    endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
     params = {"key": api_key}
-    body = {"prompt": {"text": prompt}}
+    body = {"contents": [{"parts": [{"text": prompt}]}]}
     backoff = 1
+
     for attempt in range(3):
         try:
             resp = requests.post(endpoint, params=params, json=body, timeout=30)
             resp.raise_for_status()
             data = resp.json()
-            if "candidates" in data and data["candidates"]:
-                return data["candidates"][0].get("output", data["candidates"][0].get("content", ""))
+
+            candidates = data.get("candidates")
+            if candidates:
+                return _extract_text(candidates[0])
+
             if "output" in data:
-                return data["output"]
+                return str(data["output"])
+
             return str(data)
         except requests.RequestException as e:
             if attempt < 2:
@@ -40,7 +94,7 @@ def _rest_fallback(api_key: str, model: str, prompt: str) -> str:
             raise RuntimeError(f"Generative API REST failed: {e}") from e
 
 
-def generate_text(prompt: str, model: str = "gemini-3.5-flash") -> str:
+def generate_text(prompt: str, model: str = "gemini-2.0-flash") -> str:
     """Generate text from Gemini with retries and fallbacks.
 
     Tries the preferred `model`, retries on transient server errors (503), and
@@ -56,8 +110,7 @@ def generate_text(prompt: str, model: str = "gemini-3.5-flash") -> str:
         )
 
     if genai is None:
-        # Prefer raising a clear error to help tests/devs install the SDK.
-        raise RuntimeError("google.genai is not available in this environment. Install the Google GenAI SDK or set up REST fallback.")
+        return _rest_fallback(api_key, model, prompt)
 
     client = genai.Client(api_key=api_key)
 
@@ -68,43 +121,34 @@ def generate_text(prompt: str, model: str = "gemini-3.5-flash") -> str:
     try:
         available = client.models.list()
         for m in available:
-            name = getattr(m, 'name', None)
+            name = getattr(m, "name", None)
             if not name or name in candidates:
                 continue
-            actions = getattr(m, 'supported_actions', None) or getattr(m, 'supportedActions', None) or []
+            actions = getattr(m, "supported_actions", None) or getattr(m, "supportedActions", None) or []
             try:
-                if any('generate' in str(a).lower() for a in actions):
+                if any("generate" in str(a).lower() for a in actions):
                     candidates.append(name)
             except Exception:
-                # ignore malformed metadata
                 continue
     except Exception:
-        # if model listing fails (network, permissions), use a safe static fallback
-        candidates.extend(["gemini-1.0"])
+        candidates.extend(["gemini-1.5-flash", "gemini-1.5-pro"])
 
-    last_exc = None
-    for m in candidates:
+    for candidate in candidates:
         backoff = 1
         for attempt in range(4):
             try:
-                response = client.models.generate_content(model=m, contents=prompt)
-                # genai response may expose text or candidates
-                if hasattr(response, "text") and response.text:
-                    return response.text
-                if hasattr(response, "candidates") and response.candidates:
-                    first = response.candidates[0]
-                    return getattr(first, "content", getattr(first, "output", str(first)))
+                response = client.models.generate_content(model=candidate, contents=prompt)
+                text = _extract_text(response)
+                if text:
+                    return text
                 return str(response)
             except Exception as e:
-                last_exc = e
                 msg = str(e)
-                # if server busy (503), retry with backoff
                 if "503" in msg or "UNAVAILABLE" in msg or "high demand" in msg.lower():
-                    time.sleep(backoff)
-                    backoff *= 2
-                    continue
-                # other errors -> break and try next model
+                    if attempt < 3:
+                        time.sleep(backoff)
+                        backoff *= 2
+                        continue
                 break
 
-    # REST fallback using Generative Language API
     return _rest_fallback(api_key, candidates[-1], prompt)
