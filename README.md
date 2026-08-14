@@ -1,6 +1,4 @@
-# Calendar-Gemini Agent — Minimal Python scaffold
-
-Purpose: Example scaffold showing how to perform OAuth for a personal Google Calendar, call the Calendar API, and call Gemini (Generative AI).
+# Calendar-Gemini Agent
 
 Quick start
 
@@ -38,10 +36,10 @@ Files created:
 - `src/gemini_client.py` — wrapper to call Gemini (uses `google-generativeai` if available).
 - `.env.example` — environment variable template.
 
-Code reviewer (Revisor de Código)
+Code Reviewer
 --------------------------------
 
-This repository includes an agent description for a code reviewer in `agent.md` ("Revisor de Código"). You can ask the assistant to run that reviewer to inspect files and propose patches.
+This repository includes an agent description for a code reviewer in `agent.md`. You can ask the assistant to run that reviewer to inspect files and propose patches.
 
 How to invoke the reviewer (examples):
 
