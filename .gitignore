@@ -1,0 +1,39 @@
+.env
+.env.*
+credentials.json
+token.json
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Test and coverage
+.pytest_cache/
+coverage.xml
+htmlcov/
+
+# Type checking / linters
+.mypy_cache/
+
+# Packaging
+dist/
+build/
+*.egg-info/
+pip-wheel-metadata/
+
+# Logs
+*.log
+
+# Editor directories
+.vscode/
+.idea/
+
+# macOS
+.DS_Store
+
+# Node
+node_modules/

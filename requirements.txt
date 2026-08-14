@@ -1,0 +1,10 @@
+langgraph
+langchain
+google-api-python-client>=2.0.0
+google-auth-httplib2
+google-auth-oauthlib
+python-dotenv
+requests
+google-generativeai
+tzdata
+pytest
