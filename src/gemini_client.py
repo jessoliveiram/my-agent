@@ -3,9 +3,12 @@
 Small robustness improvements: safer model listing, clearer REST fallback helper,
 and improved error messages to aid unit testing and failure diagnosis.
 """
+from __future__ import annotations
+
+import logging
 import os
 import time
-from typing import Any, List
+from typing import Any
 
 import dotenv
 import requests
@@ -14,6 +17,9 @@ try:
     from google import genai
 except Exception:  # pragma: no cover - environment-specific
     genai = None
+
+
+logger = logging.getLogger(__name__)
 
 
 def _extract_text(payload: Any) -> str:
@@ -86,12 +92,12 @@ def _rest_fallback(api_key: str, model: str, prompt: str) -> str:
                 return str(data["output"])
 
             return str(data)
-        except requests.RequestException as e:
+        except (requests.RequestException, ValueError):
             if attempt < 2:
                 time.sleep(backoff)
                 backoff *= 2
                 continue
-            raise RuntimeError(f"Generative API REST failed: {e}") from e
+            raise RuntimeError("Generative API REST request failed") from None
 
 
 def generate_text(prompt: str, model: str = "gemini-2.0-flash") -> str:
@@ -101,6 +107,11 @@ def generate_text(prompt: str, model: str = "gemini-2.0-flash") -> str:
     falls back to alternative models and finally to the REST endpoint if
     necessary.
     """
+    if not prompt.strip():
+        raise ValueError("prompt must not be empty")
+    if not model.strip():
+        raise ValueError("model must not be empty")
+
     dotenv.load_dotenv()
 
     api_key = os.environ.get("GOOGLE_API_KEY")
@@ -112,12 +123,15 @@ def generate_text(prompt: str, model: str = "gemini-2.0-flash") -> str:
     if genai is None:
         return _rest_fallback(api_key, model, prompt)
 
-    client = genai.Client(api_key=api_key)
+    try:
+        client = genai.Client(api_key=api_key)
+    except Exception as exc:
+        raise RuntimeError("Unable to initialize Gemini client") from exc
 
     # Build a dynamic fallback list from the GenAI service: prefer models that
     # advertise generation capabilities. If listing fails, fall back to a
     # conservative static list.
-    candidates: List[str] = [model]
+    candidates: list[str] = [model]
     try:
         available = client.models.list()
         for m in available:
@@ -131,6 +145,7 @@ def generate_text(prompt: str, model: str = "gemini-2.0-flash") -> str:
             except Exception:
                 continue
     except Exception:
+        logger.warning("Unable to list Gemini models; using fallback models")
         candidates.extend(["gemini-1.5-flash", "gemini-1.5-pro"])
 
     for candidate in candidates:
@@ -142,13 +157,14 @@ def generate_text(prompt: str, model: str = "gemini-2.0-flash") -> str:
                 if text:
                     return text
                 return str(response)
-            except Exception as e:
-                msg = str(e)
+            except Exception as exc:
+                msg = str(exc)
                 if "503" in msg or "UNAVAILABLE" in msg or "high demand" in msg.lower():
                     if attempt < 3:
                         time.sleep(backoff)
                         backoff *= 2
                         continue
+                    logger.warning("Gemini model request failed")
                 break
 
     return _rest_fallback(api_key, candidates[-1], prompt)

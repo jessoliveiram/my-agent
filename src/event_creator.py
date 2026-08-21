@@ -6,15 +6,20 @@ Functions:
 - `create_event_from_nl(service, nl)` — end-to-end: parse, confirm, create.
 """
 from __future__ import annotations
+
 import json
-from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-from datetime import timezone as dt_timezone
-from typing import Any, Dict, List, Optional
+import logging
 import re
+from datetime import datetime, timedelta
+from datetime import timezone as dt_timezone
+from typing import Any, Dict
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from src.gemini_client import generate_text
 from src.calendar_client import create_event
+
+
+logger = logging.getLogger(__name__)
 
 
 def _extract_json(text: str) -> str:
@@ -32,63 +37,33 @@ def _extract_json(text: str) -> str:
     return text
 
 
-def _normalize_relative_date(date_value: Optional[str], timezone_name: Optional[str] = None) -> Optional[str]:
-    """Resolve relative dates using Gemini's natural-language interpretation."""
-    if date_value is None:
-        return None
-
-    value = str(date_value).strip()
-    if not value:
-        return None
-
-    # Already concrete ISO dates should be kept as-is.
-    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
-        return value
-
-    tz = ZoneInfo(timezone_name) if timezone_name else None
-    today = datetime.now(tz) if tz else datetime.now()
-
-    prompt = (
-        "Convert the following date expression into a single ISO date in YYYY-MM-DD format. "
-        "Use today's date as the reference point. Return only the date and nothing else.\n"
-        f"Today: {today.date().isoformat()}\n"
-        f"Timezone: {timezone_name or 'UTC'}\n"
-        f"Input: {value}"
-    )
-
-    try:
-        response = generate_text(prompt)
-        match = re.search(r"\d{4}-\d{2}-\d{2}", response)
-        if match:
-            return match.group(0)
-    except Exception:
-        pass
-
-    return value
-
-
 def parse_event_request(nl: str) -> Dict[str, Any]:
     """Ask Gemini to extract event fields and return a dict.
 
     The returned dict keys: summary, date (YYYY-MM-DD or null), start_time (HH:MM or null),
     duration_minutes (int or null), timezone (string or null), attendees (list of emails).
     """
+    if not nl.strip():
+        raise ValueError("Natural-language event request must not be empty")
+
+    reference_date = datetime.now(dt_timezone.utc).date().isoformat()
     prompt = (
         "Extract event information from the user's request.\n"
-        "Return ONLY a single valid JSON object with these keys: \n"
+        "Return ONLY one valid JSON object with exactly these keys:\n"
         "- summary (string)\n"
         "- date (YYYY-MM-DD) or null\n"
         "- start_time (HH:MM 24-hour) or null\n"
         "- duration_minutes (integer) or null\n"
         "- timezone (IANA string like 'Europe/Lisbon' or null)\n"
         "- attendees (array of email strings, may be empty)\n\n"
-        "Important: If the user provides a relative or natural-language date (e.g. 'tomorrow', 'next Monday', 'Aug 14th'), CONVERT it to an explicit date in YYYY-MM-DD format relative to today's date.\n"
-        "Use the user's local date rules when interpreting weekdays (assume the system local date if unknown).\n\n"
-        "Examples of required output formatting:\n"
-        "- If user says 'tomorrow' and today is 2026-08-14, date should be '2026-08-15'.\n"
-        "- If user says 'Aug 14' convert to '2026-08-14' if the year is ambiguous and that date is next in the future; otherwise include the explicit year.\n\n"
-        "If any information is ambiguous or missing, set the field to null or empty list.\n"
-        "If the user does NOT specify a timezone, set the `timezone` field to 'America/Sao_Paulo' (Brazil) in the JSON.\n"
+        "Rules:\n"
+        f"- Reference date is {reference_date} in UTC. Use it to resolve relative dates.\n"
+        "- Convert 'today', 'tomorrow', weekdays and month/day expressions to an explicit date.\n"
+        "- For a month/day without a year, choose the next occurrence on or after the reference date.\n"
+        "- Use 24-hour HH:MM for start_time and an integer for duration_minutes.\n"
+        "- Use an IANA timezone; if none is provided, use 'America/Sao_Paulo'.\n"
+        "- If a value is missing or genuinely ambiguous, use null; attendees must be an array.\n"
+        "- Do not include Markdown, explanations, or extra keys.\n\n"
         f"User request: '''{nl}'''\n"
         "Respond with only JSON and no additional text."
     )
@@ -97,97 +72,71 @@ def parse_event_request(nl: str) -> Dict[str, Any]:
     json_text = _extract_json(resp)
     try:
         parsed = json.loads(json_text)
+        if not isinstance(parsed, dict):
+            raise ValueError("model output must be a JSON object")
         timezone_name = parsed.get('timezone') or 'America/Sao_Paulo'
         parsed['timezone'] = timezone_name
-        parsed['date'] = _normalize_relative_date(parsed.get('date'), timezone_name)
         return parsed
-    except Exception as e:
-        raise RuntimeError(f'Failed to parse model JSON output: {e}\nModel output:\n{resp}')
+    except (TypeError, ValueError, json.JSONDecodeError) as exc:
+        logger.warning("Gemini returned an invalid event payload")
+        raise RuntimeError("Failed to parse model JSON output") from exc
 
 
 def build_event_body(parsed: Dict[str, Any]) -> Dict[str, Any]:
     """Build a Google Calendar event body from parsed fields."""
+    if not isinstance(parsed, dict):
+        raise TypeError("parsed event must be a dictionary")
+
     summary = parsed.get('summary') or 'Untitled Event'
     timezone = parsed.get('timezone') or 'America/Sao_Paulo'
-    date = _normalize_relative_date(parsed.get('date'), timezone)
+    date = parsed.get('date')
+    if date is not None:
+        if not isinstance(date, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", date):
+            raise ValueError("date must use YYYY-MM-DD format")
+        try:
+            datetime.strptime(date, "%Y-%m-%d")
+        except ValueError as exc:
+            raise ValueError("date must be a valid calendar date") from exc
     start_time = parsed.get('start_time')
-    duration = parsed.get('duration_minutes') or 60
+    duration_value = parsed.get('duration_minutes')
+    try:
+        duration = 60 if duration_value is None else int(duration_value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("duration_minutes must be an integer") from exc
+    if duration <= 0:
+        raise ValueError("duration_minutes must be greater than zero")
+    if not isinstance(timezone, str) or not timezone.strip():
+        raise ValueError("timezone must be a non-empty IANA timezone")
     try:
         tz = ZoneInfo(timezone)
-    except ZoneInfoNotFoundError:
-        # Windows may lack the tzdata package; fall back to fixed -03:00 (Sao Paulo)
-        tz = dt_timezone(timedelta(hours=-3))
+    except ZoneInfoNotFoundError as exc:
+        raise ValueError("timezone must be a valid IANA timezone") from exc
     attendees = parsed.get('attendees') or []
 
     if date and start_time:
-        # combine into ISO datetime and attach timezone if missing
-        # Be robust: the model might return non-ISO or two-digit-year dates.
-        start_dt = None
-        parse_error = None
+        if not isinstance(start_time, str):
+            raise ValueError("start_time must use HH:MM format")
         try:
-            start_dt = datetime.fromisoformat(f"{date}T{start_time}")
-        except Exception as e:
-            parse_error = e
-            # Try several common date formats (lenient)
-            tried = False
-            for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%m-%d-%Y", "%d/%m/%Y", "%d/%m/%y", "%m/%d/%Y"):
-                try:
-                    d = datetime.strptime(date, fmt).date()
-                    hh, mm = [int(x) for x in start_time.split(":")]
-                    start_dt = datetime(d.year, d.month, d.day, hh, mm)
-                    tried = True
-                    break
-                except Exception:
-                    continue
-            if not tried:
-                # Last resort: try extracting numeric parts
-                m = re.split(r"[-/\\]", date)
-                if len(m) == 3:
-                    try:
-                        p0, p1, p2 = m
-                        # Heuristic: if first token length==4 assume YYYY-MM-DD
-                        if len(p0) == 4:
-                            year, month, day = int(p0), int(p1), int(p2)
-                        else:
-                            # assume DD-MM-YY or DD-MM-YYYY
-                            day, month, year = int(p0), int(p1), int(p2)
-                            if year < 100:
-                                # two-digit year -> map to 2000-2099
-                                year += 2000
-                        hh, mm = [int(x) for x in start_time.split(":")]
-                        start_dt = datetime(year, month, day, hh, mm)
-                    except Exception:
-                        start_dt = None
-        if start_dt is None:
-            raise RuntimeError(f"Could not parse date/time: date={date} start_time={start_time} (parse error: {parse_error})")
-        if start_dt.tzinfo is None:
-            start_dt = start_dt.replace(tzinfo=tz)
-        # Sanity check: if parsed year is far in the past relative to today,
-        # but the month/day matches tomorrow, adjust year to the correct one.
-        try:
-            today = datetime.now(tz).date()
-            tomorrow = today + timedelta(days=1)
-            if start_dt.date().month == tomorrow.month and start_dt.date().day == tomorrow.day:
-                if start_dt.year < tomorrow.year:
-                    start_dt = start_dt.replace(year=tomorrow.year)
-        except Exception:
-            pass
-        end_dt = start_dt + timedelta(minutes=int(duration))
+            start_dt = datetime.strptime(f"{date} {start_time}", "%Y-%m-%d %H:%M")
+        except ValueError as exc:
+            raise ValueError("start_time must use valid 24-hour HH:MM format") from exc
+        start_dt = start_dt.replace(tzinfo=tz)
+        end_dt = start_dt + timedelta(minutes=duration)
         start = {"dateTime": start_dt.isoformat(), "timeZone": timezone}
         end = {"dateTime": end_dt.isoformat(), "timeZone": timezone}
     elif (not date) and start_time:
         # If user provided a time but no date, schedule the next occurrence of that time.
         # Use Sao Paulo timezone (America/Sao_Paulo) by default to build an aware datetime.
         now = datetime.now(tz)
-        # parse start_time as HH:MM
         try:
-            hh, mm = [int(x) for x in start_time.split(':')]
-        except Exception:
-            hh, mm = 9, 0
+            parsed_time = datetime.strptime(start_time, "%H:%M")
+        except (TypeError, ValueError) as exc:
+            raise ValueError("start_time must use valid 24-hour HH:MM format") from exc
+        hh, mm = parsed_time.hour, parsed_time.minute
         candidate = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
         if candidate <= now:
             candidate = candidate + timedelta(days=1)
-        end_dt = candidate + timedelta(minutes=int(duration))
+        end_dt = candidate + timedelta(minutes=duration)
         # use ISO with offset and provide timeZone if available
         start = {"dateTime": candidate.isoformat(), "timeZone": timezone}
         end = {"dateTime": end_dt.isoformat(), "timeZone": timezone}
@@ -202,8 +151,9 @@ def build_event_body(parsed: Dict[str, Any]) -> Dict[str, Any]:
             end = {"date": date}
     else:
         # no date — create a tentative event with no time (user should confirm)
-        start = {"date": datetime.utcnow().date().isoformat()}
-        end = {"date": datetime.utcnow().date().isoformat()}
+        today = datetime.now(dt_timezone.utc).date().isoformat()
+        start = {"date": today}
+        end = {"date": today}
 
     event_body: Dict[str, Any] = {
         "summary": summary,
@@ -217,7 +167,7 @@ def build_event_body(parsed: Dict[str, Any]) -> Dict[str, Any]:
     return event_body
 
 
-def create_event_from_nl(service, nl: str, confirm: bool = True) -> Dict[str, Any]:
+def create_event_from_nl(service: Any, nl: str, confirm: bool = True) -> dict[str, Any]:
     """Parse NL request, show parsed fields, optionally confirm, and create event."""
     parsed = parse_event_request(nl)
     body = build_event_body(parsed)

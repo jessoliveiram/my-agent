@@ -1,6 +1,8 @@
 """Example runner: obtain creds, list upcoming events, ask Gemini to summarize."""
+from __future__ import annotations
+
+import logging
 import os
-from pprint import pprint
 
 import dotenv
 from google import genai
@@ -11,11 +13,18 @@ from src.gemini_client import generate_text
 from src.event_creator import create_event_from_nl
 
 
-def load_env():
+logger = logging.getLogger(__name__)
+
+
+def load_env() -> None:
     dotenv.load_dotenv()
 
 
-def main():
+def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s %(levelname)s %(name)s: %(message)s',
+    )
     load_env()
     client_secrets = os.environ.get('CLIENT_SECRETS_FILE', 'credentials.json')
     token_file = os.environ.get('TOKEN_FILE', 'token.json')
@@ -28,11 +37,6 @@ def main():
         print('No upcoming events found.')
         return
 
-    # DEBUG: print raw events so we can inspect original fields
-    print('\nRaw events (JSON):')
-    pprint(events)
-
-
     summary_prompt = 'Summarize the following calendar events in bullet points:\n'
     for e in events:
         start = e.get('start', {}).get('dateTime', e.get('start', {}).get('date'))
@@ -43,8 +47,8 @@ def main():
         summary = generate_text(summary_prompt)
         print('\nGemini summary:\n')
         print(summary)
-    except Exception as exc:
-        print('Gemini generation failed:', exc)
+    except Exception:
+        logger.error('Gemini generation failed')
 
     # Offer to create an event using natural language
     ans = input('\nWould you like to create an event by natural language? (y/N): ').strip().lower()
@@ -53,7 +57,7 @@ def main():
         create_event_from_nl(service, nl)
 
 
-def get_available_models():
+def get_available_models() -> None:
     """List available Gemini models that support content generation."""
     load_env()
     api_key = os.environ.get("GOOGLE_API_KEY")
