@@ -4,6 +4,7 @@ credentials.json
 token.json
 venv/
 .venv/
+.github/
 
 # Python cache
 __pycache__/
