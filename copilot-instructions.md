@@ -1,39 +1,39 @@
 # Copilot / Assistant Instructions (workspace)
 
-Objetivo
-- Auxiliar no desenvolvimento deste agente que integra Google Calendar e Gemini.
+## Purpose
+- Assist in developing this agent that integrates Google Calendar and Gemini.
 
-Context
-- Este repositório contém um exemplo de integração com Google Calendar e Gemini (Generative AI).
-- Todas as expecificações estão documentadas em `context.md` e `agent.md`.
+## Context
+- This repository contains an integration example with Google Calendar and Gemini (Generative AI).
+- Skills are documented in `docs/skills/`, and external connections are configured in `docs/mcp/mcp.json`.
 
-Como eu trabalho aqui
-- Faça mudanças pequenas e testáveis via `apply_patch`.
-- Sempre execute testes locais antes de criar mudanças maiores: `pytest -q`.
-- Use um ambiente virtual Python (`.venv`) e instale dependências com `pip install -r requirements.txt`.
-- Utilize instruções em README.md e .agent.md para entender o propósito, persona, ferramentas permitidas e restrições do agente.
+## Workflow
+- Make small, testable changes.
+- Always run local tests before creating larger changes: `pytest -q`.
+- Use a Python virtual environment (`venv`) and install dependencies with `pip install -r requirements.txt`.
+- Refer to `README.md`, `docs/`, `docs/skills/`, and `docs/mcp/mcp.json` to understand the project purpose, workflows, skills, and integrations.
 
-Regras importantes
-- NUNCA adiciona chaves, credenciais ou `credentials.json` ao repositório.
-- Se precisar de credenciais, instrua o usuário a adicioná-las ao `.env` e documente os nomes das variáveis de ambiente.
-- Prefira alterações isoladas; explique as razões e os trade-offs em poucas linhas.
+## Important Rules
+- NEVER add keys, credentials, or `credentials.json` to the repository.
+- If credentials are needed, instruct the user to add them to `.env` and document the environment variable names.
+- Prefer isolated changes; explain reasons and trade-offs concisely.
 
-Style e qualidade
-- Sugira e aplique pequenas refatorações que melhorem legibilidade e testabilidade.
-- Ao propor alterações automáticas, sempre inclua um plano de teste rápido (comandos a executar).
-- Mantenha o código consistente com as práticas recomendadas da linguagem e do framework.
-- Siga as convenções de nomenclatura e estilo do projeto.
+## Style and Quality
+- Suggest and apply small refactorings that improve readability and testability.
+- When proposing automated changes, always include a quick test plan (commands to run).
+- Keep code consistent with best practices for Python and used frameworks.
+- Follow naming and style conventions of the project.
 
-Testes e execução
-- Ativar venv (PowerShell):
+## Testing and Execution
+- Activate venv (PowerShell):
 ```powershell
 venv\Scripts\Activate
 pip install -r requirements.txt
 pytest -q
 ```
-- Executar o app (exemplo):
+- Run the app (example):
 ```powershell
 python -m src.main
 ```
 
-Se precisar de mais contexto, peça: 1) arquivo(s) a modificar, 2) objetivo curto (1-2 frases), 3) requisitos de teste.
+If more context is needed, ask for: 1) file(s) to modify, 2) short objective (1-2 sentences), 3) test requirements.

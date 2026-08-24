@@ -37,8 +37,10 @@ def run_oauth_flow(client_secrets_file: str, token_path: str) -> Any:
             try:
                 creds.refresh(Request())
             except RefreshError as exc:
-                raise RuntimeError("Unable to refresh OAuth credentials") from exc
-        else:
+                logger.warning("OAuth token is no longer valid; starting authorization again")
+                creds = None
+
+        if creds is None:
             flow = InstalledAppFlow.from_client_secrets_file(str(client_file), SCOPES)
             creds = flow.run_local_server(port=0)
 

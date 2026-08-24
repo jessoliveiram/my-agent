@@ -27,13 +27,13 @@ pytest -q
 6. Run the OAuth flow to obtain `token.json`:
 
 ```powershell
-python -m src.oauth_flow
+venv\Scripts\python.exe -m src.oauth_flow
 ```
 
 7. Run the example:
 
 ```powershell
-python -m src.main
+venv\Scripts\python.exe -m src.main
 ```
 
 Files created:
@@ -42,9 +42,19 @@ Files created:
 - `src/gemini_client.py` — wrapper to call Gemini (uses `google-generativeai` if available).
 - `.env.example` — environment variable template.
 
+## Documentation
+
+For comprehensive guides, architecture overview, and feature specifications, visit the [Documentation Directory](docs/README.md).
+
+- **Calendar Integration**: [Calendar Integration](docs/guides/calendar-integration.md)
+- **Quality Skills**: [Skills directory](docs/skills/)
+- **MCP Configuration**: [mcp.json](docs/mcp/mcp.json)
+
+The Calendar MCP server exposes `upcoming_events` and `add_event` to MCP-compatible clients.
+
 ## Agents and Skills
 
-This repository includes a software engineering agent defined in `agent.md` with specialized skills for quality assurance, static code review, test suite auditing and test generation in Python.
+This repository keeps reusable software-engineering skills in `docs/skills/`, separated by responsibility for code review, test review, and test creation.
 
 ### Available Skills:
 

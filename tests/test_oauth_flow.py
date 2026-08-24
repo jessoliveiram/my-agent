@@ -1,6 +1,7 @@
 from unittest.mock import Mock
 
 import pytest
+from google.auth.exceptions import RefreshError
 
 from src import oauth_flow
 
@@ -90,3 +91,37 @@ def test_run_oauth_flow_runs_installed_app_when_no_token(
     factory.assert_called_once_with(str(client_file), oauth_flow.SCOPES)
     flow.run_local_server.assert_called_once_with(port=0)
     assert token_file.exists()
+
+
+def test_run_oauth_flow_reauthorizes_when_refresh_token_is_revoked(
+    monkeypatch, tmp_path
+):
+    client_file = tmp_path / "client.json"
+    token_file = tmp_path / "token.json"
+    client_file.write_text("client", encoding="utf-8")
+    token_file.write_text("token", encoding="utf-8")
+    expired_credentials = FakeCredentials(
+        valid=False, expired=True, refresh_token="revoked-token"
+    )
+    replacement_credentials = FakeCredentials(valid=True)
+    monkeypatch.setattr(
+        oauth_flow.Credentials,
+        "from_authorized_user_file",
+        Mock(return_value=expired_credentials),
+    )
+    expired_credentials.refresh = Mock(
+        side_effect=RefreshError("invalid_grant")
+    )
+    flow = Mock()
+    flow.run_local_server.return_value = replacement_credentials
+    monkeypatch.setattr(
+        oauth_flow.InstalledAppFlow,
+        "from_client_secrets_file",
+        Mock(return_value=flow),
+    )
+
+    result = oauth_flow.run_oauth_flow(str(client_file), str(token_file))
+
+    assert result is replacement_credentials
+    flow.run_local_server.assert_called_once_with(port=0)
+    assert token_file.read_text(encoding="utf-8") == '{"access_token":"redacted"}'
