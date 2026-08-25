@@ -19,6 +19,9 @@ This directory contains the feature specifications for the My Agent development 
 5. **[005-cloud-deployment](005-cloud-deployment/spec.md)**  
    *Continuous operation cloud setup.*
 
+6. **[006-shared-productivity-mcp](006-shared-productivity-mcp/spec.md)**
+   *Shared MCP server for Calendar, Tasks and other productivity tools across multiple agents.*
+
 ## 📐 Spec Kit Methodology
 Each specification file operates as a standalone living document. Over time, features evolve inside their respective folders through:
 - `plan.md` (Implementation Planning)
