@@ -17,6 +17,22 @@ pytest -v
 
 All external API calls must be mocked in unit tests (see existing tests in `tests/`).
 
+## MCP Development Flow
+
+Run the MCP Server locally with `MCP_TRANSPORT=stdio` for an MCP host that
+launches it as a child process, or with `MCP_TRANSPORT=streamable-http` for
+the same network boundary used by Compose. The Agent Server connects through
+`MCP_SERVER_URL`; the MCP Client diagnostic command verifies discovery without
+executing Calendar mutations.
+
+The Agent Server must not import Google Calendar API code for the MCP path.
+Google credentials belong to the MCP Server and must stay outside Docker
+images and source control.
+
+Mutation calls must include explicit confirmation and a stable
+`idempotency_key`. The MCP Server persists completed results in SQLite so a
+retry after a process restart does not create a second event.
+
 ## Quality Skills
 
 Use the quality skills in `/skills` during development by prompting Copilot Chat:

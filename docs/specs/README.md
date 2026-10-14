@@ -4,26 +4,32 @@ This directory contains the feature specifications for the My Agent development 
 
 ## 📋 Roadmaps & Features
 
-1. **[001-langgraph-routing](001-langgraph-routing/spec.md)**  
-   *Intent routing layer using LangGraph to decide if calendar/tasks access is needed.*
+1. **[000-mcp-compose](000-mcp-compose/spec.md)** — **Done**
+   *Baseline MCP Client/Server, Compose and configuration refactor.*
 
-2. **[002-preferences-drive-sync](002-preferences-drive-sync/spec.md)**  
-   *Local preferences database using SQLite with remote backup sync via Google Drive API.*
+2. **[001-langgraph-mcp-routing](001-langgraph-mcp-routing/spec.md)** — **Done**
+   *LangGraph routing over MCP-compatible Calendar adapters.*
 
-3. **[003-google-tasks](003-google-tasks/spec.md)**  
-   *Integrate task management and task-to-calendar-event conversion capabilities.*
+3. **[002-calendar-mcp-foundation](002-calendar-mcp-foundation/spec.md)** — **Partial**
+   *Stable Calendar MCP contracts, confirmation and idempotency.*
 
-4. **[004-telegram](004-telegram/spec.md)**  
-   *Conversational interface using Telegram Bot API for remote agent interactions.*
+4. **[003-preferences-drive-sync](003-preferences-drive-sync/spec.md)** — **Draft**
+   *Local preferences database with Google Drive backup.*
 
-5. **[005-cloud-deployment](005-cloud-deployment/spec.md)**  
-   *Continuous operation cloud setup.*
+5. **[004-google-tasks](004-google-tasks/spec.md)** — **Draft**
+   *Tasks management and task-to-Calendar conversion through MCP.*
 
-6. **[006-shared-productivity-mcp](006-shared-productivity-mcp/spec.md)**
-   *Shared MCP server for Calendar, Tasks and other productivity tools across multiple agents.*
+6. **[005-telegram](005-telegram/spec.md)** — **Draft**
+   *Telegram transport adapter for the Agent Server.*
+
+7. **[006-cloud-deployment](006-cloud-deployment/spec.md)** — **Draft**
+   *Continuous operation, recovery and deployment controls.*
+
+8. **[007-shared-productivity-mcp](007-shared-productivity-mcp/spec.md)** — **Future**
+   *Authenticated remote MCP service shared by multiple agents.*
 
 ## 📐 Spec Kit Methodology
-Each specification file operates as a standalone living document. Over time, features evolve inside their respective folders through:
+Each specification file is a standalone living document. Supporting artifacts may be added inside its folder as implementation begins:
 - `plan.md` (Implementation Planning)
 - `research.md` (Spikes/Evaluations)
 - `data-model.md` (Database/State schemas)

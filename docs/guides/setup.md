@@ -30,7 +30,9 @@ This guide expands on the quick start instructions to help you fully configure a
      ```powershell
      cp .env.example .env
      ```
-   - Set `CLIENT_SECRETS_FILE=credentials.json` and your `GOOGLE_API_KEY`.
+    - Set `CLIENT_SECRETS_FILE=credentials.json` and your `GOOGLE_API_KEY`.
+    - For the Agent Server to use the MCP Server, set `MCP_SERVER_URL` to the
+       server endpoint. Leave it empty to use the local direct-API fallback.
 
 5. **Authenticate**:
    - Run the OAuth flow script to generate `token.json`:
@@ -41,4 +43,16 @@ This guide expands on the quick start instructions to help you fully configure a
 6. **Run Tests**:
    ```powershell
    venv\Scripts\python.exe -m pytest -q
+   ```
+
+7. **Run the MCP Server over HTTP locally**:
+   ```powershell
+   $env:MCP_TRANSPORT="streamable-http"
+   venv\Scripts\python.exe -m src.calendar_mcp_server
+   ```
+
+   In another terminal, discover its tools:
+   ```powershell
+   $env:MCP_SERVER_URL="http://127.0.0.1:8000/mcp"
+   venv\Scripts\python.exe -m src.mcp_client
    ```

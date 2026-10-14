@@ -7,39 +7,48 @@ This document details how requests are processed and data flows through the My A
 ```mermaid
 sequenceDiagram
     participant User
-    participant LangGraph as LangGraph Router
+    participant Agent as Agent Server
+    participant MCPClient as MCP Client
     participant Gemini as Gemini Client
-    participant Calendar as Calendar Client
+    participant MCPServer as MCP Server
+    participant Calendar as Calendar Integration
     participant GoogleAPI as Google Calendar API
 
-    User->>LangGraph: Natural language request (e.g. "What's on my calendar?")
-    LangGraph->>Gemini: Analyze intent & extract parameters
-    Gemini-->>LangGraph: Intent classification (Read/Write/General)
+    User->>Agent: Natural language request (e.g. "What's on my calendar?")
+    Agent->>Gemini: Analyze intent & extract parameters
+    Gemini-->>Agent: Intent classification (Read/Write/General)
     
     alt General Query
-        LangGraph->>Gemini: Generate text response
-        Gemini-->>LangGraph: Response text
+        Agent->>Gemini: Generate text response
+        Gemini-->>Agent: Response text
     else Calendar Read
-        LangGraph->>Calendar: list_events()
-        Calendar->>GoogleAPI: HTTP GET /calendar/v3/calendars/primary/events
+        Agent->>MCPClient: list_tools / call_tool
+        MCPClient->>MCPServer: list_events()
+        MCPServer->>Calendar: HTTP GET /calendar/v3/calendars/primary/events
         GoogleAPI-->>Calendar: Event list JSON
-        Calendar-->>LangGraph: Formatted events
-        LangGraph->>Gemini: Summarize events for user
-        Gemini-->>LangGraph: Summary text
+        Calendar-->>MCPServer: Formatted events
+        MCPServer-->>MCPClient: Tool result
+        MCPClient-->>Agent: Formatted events
+        Agent->>Gemini: Summarize events for user
+        Gemini-->>Agent: Summary text
     else Calendar Write (Requires Confirmation)
-        LangGraph->>User: Request confirmation
-        User-->>LangGraph: Confirm / Decline
+        Agent->>User: Request confirmation
+        User-->>Agent: Confirm / Decline
         opt Confirmed
-            LangGraph->>Calendar: create_event()
-            Calendar->>GoogleAPI: HTTP POST /calendar/v3/calendars/primary/events
+            Agent->>MCPClient: create_event()
+            MCPClient->>MCPServer: create_event()
+            MCPServer->>Calendar: HTTP POST /calendar/v3/calendars/primary/events
             GoogleAPI-->>Calendar: Created event JSON
-            Calendar-->>LangGraph: Success confirmation
+            Calendar-->>MCPServer: Success confirmation
+            MCPServer-->>MCPClient: Tool result
+            MCPClient-->>Agent: Success confirmation
         end
     end
 
-    LangGraph-->>User: Final Assistant Response
+    Agent-->>User: Final Assistant Response
 ```
 
 ## State Management
 - Conversation state and context are tracked via LangGraph nodes.
-- OAuth tokens (`token.json`) are securely loaded locally per session.
+- OAuth tokens (`token.json`) are loaded by the MCP Server and are never passed
+    through the Agent Server or MCP Client.

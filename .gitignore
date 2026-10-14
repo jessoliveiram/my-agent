@@ -28,6 +28,7 @@ pip-wheel-metadata/
 
 # Logs
 *.log
+mcp_idempotency.sqlite3
 
 # Editor directories
 .vscode/

@@ -1,0 +1,55 @@
+services:
+  mcp-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp-server
+    environment:
+      CLIENT_SECRETS_FILE: /app/credentials.json
+      TOKEN_FILE: /app/token.json
+      MCP_TRANSPORT: streamable-http
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 8000
+      MCP_IDEMPOTENCY_DB: /app/data/idempotency.sqlite3
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./credentials.json:/app/credentials.json:ro
+      - ./token.json:/app/token.json
+      - mcp-server-data:/app/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import socket; socket.create_connection(('127.0.0.1', 8000), 2).close()"
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    environment:
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:?Set GOOGLE_API_KEY in .env or the shell}
+      MCP_SERVER_URL: http://mcp-server:8000/mcp
+    depends_on:
+      mcp-server:
+        condition: service_healthy
+    stdin_open: true
+    tty: true
+
+  mcp-client-tools:
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp-client
+    environment:
+      MCP_SERVER_URL: http://mcp-server:8000/mcp
+    depends_on:
+      mcp-server:
+        condition: service_healthy
+    profiles:
+      - tools
+
+volumes:
+  mcp-server-data:

@@ -3,9 +3,12 @@
     "google-calendar": {
       "type": "local",
       "description": "Google Calendar MCP server",
-      "command": "venv\\Scripts\\python.exe",
+      "command": "python",
       "args": ["-m", "src.calendar_mcp_server"],
-      "cwd": "C:\\Users\\jessm\\Projetos\\my-agent"
+      "cwd": ".",
+      "env": {
+        "MCP_TRANSPORT": "stdio"
+      }
     }
   }
 }

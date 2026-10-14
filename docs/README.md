@@ -22,8 +22,11 @@ Welcome to the **My Agent** documentation directory.
 
 ## 📋 Feature Specifications
 Follow the GitHub Spec Kit methodology in [`docs/specs/`](specs/README.md):
-1. [001-langgraph-routing](specs/001-langgraph-routing/spec.md)
-2. [002-preferences-drive-sync](specs/002-preferences-drive-sync/spec.md)
-3. [003-google-tasks](specs/003-google-tasks/spec.md)
-4. [004-telegram](specs/004-telegram/spec.md)
-5. [005-cloud-deployment](specs/005-cloud-deployment/spec.md)
+1. [000-mcp-compose](specs/000-mcp-compose/spec.md) — **Done**
+2. [001-langgraph-mcp-routing](specs/001-langgraph-mcp-routing/spec.md) — **Done**
+3. [002-calendar-mcp-foundation](specs/002-calendar-mcp-foundation/spec.md) — **Partial**
+4. [003-preferences-drive-sync](specs/003-preferences-drive-sync/spec.md) — **Draft**
+5. [004-google-tasks](specs/004-google-tasks/spec.md) — **Draft**
+6. [005-telegram](specs/005-telegram/spec.md) — **Draft**
+7. [006-cloud-deployment](specs/006-cloud-deployment/spec.md) — **Draft**
+8. [007-shared-productivity-mcp](specs/007-shared-productivity-mcp/spec.md) — **Future**

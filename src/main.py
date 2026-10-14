@@ -1,66 +1,85 @@
-"""Example runner: obtain creds, list upcoming events, ask Gemini to summarize."""
+"""Main entry point with LangGraph intent routing."""
 from __future__ import annotations
 
 import logging
-import os
 
-import dotenv
 from google import genai
 
-from src.oauth_flow import run_oauth_flow
-from src.calendar_client import build_calendar_service, list_upcoming_events
-from src.gemini_client import generate_text
-from src.event_creator import create_event_from_nl
+from src.config import Settings
+from src.calendar_client import build_calendar_service
+from src.graph import run_graph
+from src.graph.tools import McpCalendarReadTool, McpCalendarWriteTool
+from src.mcp_client import McpClient
 
 
 logger = logging.getLogger(__name__)
 
 
-def load_env() -> None:
-    dotenv.load_dotenv()
-
-
 def main() -> None:
+    """Interactive loop using LangGraph intent routing."""
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s %(levelname)s %(name)s: %(message)s',
     )
-    load_env()
-    client_secrets = os.environ.get('CLIENT_SECRETS_FILE', 'credentials.json')
-    token_file = os.environ.get('TOKEN_FILE', 'token.json')
+    settings = Settings.from_env()
 
-    creds = run_oauth_flow(client_secrets, token_file)
-    service = build_calendar_service(creds)
+    if settings.mcp_server_url:
+        mcp_client = McpClient(url=settings.mcp_server_url)
+        read_tool = McpCalendarReadTool(mcp_client)
+        write_tool = McpCalendarWriteTool(mcp_client)
+        calendar_service = None
+    else:
+        # Local fallback while the MCP server is not configured.
+        from src.oauth_flow import run_oauth_flow
 
-    events = list_upcoming_events(service, max_results=5)
-    if not events:
-        print('No upcoming events found.')
-        return
+        creds = run_oauth_flow(
+            settings.client_secrets_file,
+            settings.token_file,
+        )
+        calendar_service = build_calendar_service(creds)
+        read_tool = None
+        write_tool = None
 
-    summary_prompt = 'Summarize the following calendar events in bullet points:\n'
-    for e in events:
-        start = e.get('start', {}).get('dateTime', e.get('start', {}).get('date'))
-        summary_prompt += f"- {start}: {e.get('summary', 'No title')}\n"
+    print('\n🤖 My Agent - LangGraph Intent Router')
+    print('=' * 50)
+    print('Ask me anything! I can:')
+    print('- Answer general questions')
+    print('- Check your calendar')
+    print('- Create calendar events (with confirmation)')
+    print('\nType "quit" or "exit" to stop.\n')
 
-    print('Asking Gemini to summarize events...')
-    try:
-        summary = generate_text(summary_prompt)
-        print('\nGemini summary:\n')
-        print(summary)
-    except Exception:
-        logger.error('Gemini generation failed')
+    # Interactive loop
+    while True:
+        try:
+            user_input = input('You: ').strip()
 
-    # Offer to create an event using natural language
-    ans = input('\nWould you like to create an event by natural language? (y/N): ').strip().lower()
-    if ans == 'y':
-        nl = input('Describe the event you want to create (e.g. "Meeting with Ana tomorrow 10am for 30 minutes, invite ana@example.com"):\n')
-        create_event_from_nl(service, nl)
+            if user_input.lower() in ['quit', 'exit', 'q']:
+                print('\nGoodbye! 👋')
+                break
+
+            if not user_input:
+                continue
+
+            # Run graph with user input
+            response = run_graph(
+                user_input,
+                calendar_service,
+                read_tool=read_tool,
+                write_tool=write_tool,
+            )
+            print(f'\nAssistant: {response}\n')
+
+        except KeyboardInterrupt:
+            print('\n\nGoodbye! 👋')
+            break
+        except Exception as e:
+            logger.error(f'Unexpected error: {e}')
+            print(f'\n❌ An error occurred: {type(e).__name__}\n')
 
 
 def get_available_models() -> None:
     """List available Gemini models that support content generation."""
-    load_env()
-    api_key = os.environ.get("GOOGLE_API_KEY")
+    api_key = Settings.from_env().google_api_key
     if not api_key:
         raise RuntimeError(
             "Set GOOGLE_API_KEY in your environment (eg .env or $env:GOOGLE_API_KEY)"
